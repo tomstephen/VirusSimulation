@@ -12,9 +12,14 @@ import SwiftUI
 // green -> uninfected
 // red -> infected
 // blue -> recovered
-// brown -> dead
+// grey -> dead
 
-
+enum infected_state {
+    case healthy
+    case infected
+    case recovered
+    case dead
+}
 
 
 //
@@ -58,6 +63,7 @@ class Agent: HashableClass {
     var velocity = CGPoint.zero
     
     let diameter: CGFloat = 10.0
+    var state = infected_state.healthy
     
     init(position: CGSize, color: Color, velocity: CGPoint) {
         self.position = position
@@ -71,6 +77,15 @@ class Agent: HashableClass {
         position.height += velocity.y * elapsed
         
         checkWallCollisions()
+    }
+    
+    func updateColor() {
+        switch self.state {
+        case .healthy: self.color = Color.green
+        case .infected: self.color = Color.red
+        case .dead: self.color = Color.gray
+        case .recovered: self.color = Color.blue
+        }
     }
     
     func checkWallCollisions() {
@@ -89,21 +104,30 @@ class Simulation: ObservableObject {
     @Published var iteration = 0
     var startTime = Date()
     var duration: TimeInterval
+    var number_of_agents: Int
+    var number_infected: Int
     
-    init(duration: TimeInterval) {
+    init(duration: TimeInterval, number_of_agents: Int, number_infected: Int) {
         self.duration = duration
-        self.agents = initialiseAgents(number: 100)
+        self.number_of_agents = number_of_agents
+        self.number_infected = number_infected
+        self.agents = initialiseAgents(num_agents: self.number_of_agents, num_infected: self.number_infected)
     }
     
-    private func initialiseAgents(number: Int) -> [Agent] {
+    private func initialiseAgents(num_agents: Int, num_infected: Int) -> [Agent] {
         var agents: [Agent] = []
         
-        for _ in 1...number {
+        for _ in 1...num_agents {
             let position = CGSize(width: Int.random(in: -500..<500), height: Int.random(in: -500..<500))
             let speed = 200.0
             let angle = Double.random(in: 0.0..<360.0)
             let velocity = CGPoint(x: speed * cos(angle * Double.pi / 180), y: speed * sin(angle * Double.pi / 180))
             agents.append(Agent(position: position, color: Color.green, velocity: velocity))
+        }
+        
+        for index in 1...num_infected {
+            agents[index].state = .infected
+            agents[index].updateColor()
         }
         
         return agents
@@ -115,6 +139,20 @@ class Simulation: ObservableObject {
         timer = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { timer in
             for agent in self.agents! {
                 agent.updatePosition(timeElapsed: 0.02)
+                agent.updateColor()
+            }
+            
+            for agent1 in self.agents! {
+                for agent2 in self.agents! {
+                    if agent1 != agent2 {
+                        if agent1.state == .infected || agent2.state == .infected {
+                            if isColliding(agent1: agent1, agent2: agent2) {
+                                agent1.state = .infected
+                                agent2.state = .infected
+                            }
+                        }
+                    }
+                }
             }
             
             self.iteration += 1
@@ -143,6 +181,7 @@ struct ContentView: View {
     
     var body: some View {
         VStack {
+            Text("Virus Spread Simulation")
             ZStack {
                 Rectangle()
                     .fill(Color.black)
@@ -151,8 +190,6 @@ struct ContentView: View {
                 ForEach(self.simulation.agents!, id: \.self) { agent in
                     createCircle(diameter: agent.diameter, position: agent.position, color: agent.color)
                 }
-                
-//                createCircle(diameter: self.simulation.agents!.diameter, position: self.simulation.agents!.position, color: self.simulation.agents!.color)
             }
             HStack {
                 Button(action: {
@@ -180,9 +217,13 @@ func createCircle(diameter: CGFloat, position: CGSize, color: Color) -> some Vie
         .offset(position)
 }
 
+func isColliding(agent1: Agent, agent2: Agent) -> Bool {
+    let delta_x = agent1.position.width - agent2.position.width
+    let delta_y = agent1.position.height - agent2.position.height
+    
+    let distance = sqrt(pow(delta_x, 2) + pow(delta_y, 2))
 
-//struct ContentView_Previews: PreviewProvider {
-//    static var previews: some View {
-//        ContentView()
-//    }
-//}
+    let min_distance = agent1.diameter + agent2.diameter
+    
+    return distance < min_distance
+}
